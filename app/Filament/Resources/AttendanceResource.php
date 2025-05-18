@@ -17,7 +17,7 @@ class AttendanceResource extends Resource
 {
     protected static ?string $model = Attendance::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
     protected static ?string $navigationLabel = 'Absensi';
 
     public static function form(Form $form): Form
@@ -43,6 +43,22 @@ class AttendanceResource extends Resource
                 Forms\Components\TextInput::make('location_out')
                     ->disabled()
                     ->maxLength(255),
+                Forms\Components\FileUpload::make('photo_in')
+                    ->required()
+                    ->disabled()
+                    ->image()
+                    ->imagePreviewHeight('250')
+                    ->downloadable()
+                    ->openable()
+                    ->imageEditor(),
+                Forms\Components\FileUpload::make('photo_out')
+                    ->required()
+                    ->disabled()
+                    ->image()
+                    ->imagePreviewHeight('250')
+                    ->downloadable()
+                    ->openable()
+                    ->imageEditor(),
             ]);
     }
 

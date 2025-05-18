@@ -14,7 +14,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Hanya user dengan role 'user' yang boleh akses ini
     Route::middleware('role:user')->group(function () {
-        Route::get('/absensi/today', [AttendanceController::class, 'today']);
+        Route::get('/attendance/today', [AttendanceController::class, 'today']);
         Route::post('/attendance/check-in', [AttendanceController::class, 'checkIn']);
         Route::post('/attendance/check-out', [AttendanceController::class, 'checkOut']);
     });
