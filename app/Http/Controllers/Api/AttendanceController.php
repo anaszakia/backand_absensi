@@ -78,21 +78,19 @@ class AttendanceController extends Controller
                 $extension = $file->getClientOriginalExtension();
                 $fileName = time() . '_' . $request->user()->id . '_in.' . $extension;
                 
-                // Simpan file
+                // Simpan file di folder public
+                $storagePath = 'attendance_photos/' . $fileName;
                 $file->move(public_path('attendance_photos'), $fileName);
-                $photoPath = 'attendance_photos/' . $fileName;
+                $photoPath = $storagePath;
                 
                 // Log detail file yang diupload
                 Log::info('File uploaded via multipart:', [
                     'original_name' => $file->getClientOriginalName(),
-                    'stored_path' => $path,
+                    'stored_path' => $photoPath,
                     'size' => $file->getSize(),
                     'type' => $file->getMimeType(),
-                    'exists' => Storage::exists($path)
+                    'exists' => file_exists(public_path($photoPath))
                 ]);
-                
-                // Ubah path untuk disimpan ke database (hilangkan prefix 'public/')
-                $photoPath = $path ? str_replace('public/', '', $path) : null;
             } else {
                 // Jika dikirim sebagai string atau data lain
                 $photoData = $request->input('photo');
@@ -125,7 +123,7 @@ class AttendanceController extends Controller
             Log::info('Attendance saved', [
                 'id' => $attendance->id,
                 'photo_path' => $photoPath,
-                'storage_exists' => Storage::exists('public/' . $photoPath),
+                'file_exists' => file_exists(public_path($photoPath)),
             ]);
 
             return response()->json([
@@ -200,21 +198,19 @@ class AttendanceController extends Controller
                 $extension = $file->getClientOriginalExtension();
                 $fileName = time() . '_' . $request->user()->id . '_out.' . $extension;
                 
-                // Simpan file
+                // Simpan file di folder public
+                $storagePath = 'attendance_photos/' . $fileName;
                 $file->move(public_path('attendance_photos'), $fileName);
-                $photoPath = 'attendance_photos/' . $fileName;
+                $photoPath = $storagePath;
                 
                 // Log detail file yang diupload
                 Log::info('File uploaded via multipart:', [
                     'original_name' => $file->getClientOriginalName(),
-                    'stored_path' => $path,
+                    'stored_path' => $photoPath,
                     'size' => $file->getSize(),
                     'type' => $file->getMimeType(),
-                    'exists' => Storage::exists($path)
+                    'exists' => file_exists(public_path($photoPath))
                 ]);
-                
-                // Ubah path untuk disimpan ke database (hilangkan prefix 'public/')
-                $photoPath = $path ? str_replace('public/', '', $path) : null;
             } else {
                 // Jika dikirim sebagai string atau data lain
                 $photoData = $request->input('photo');
@@ -238,7 +234,7 @@ class AttendanceController extends Controller
             Log::info('Attendance updated', [
                 'id' => $attendance->id,
                 'photo_path' => $photoPath,
-                'storage_exists' => Storage::exists('public/' . $photoPath),
+                'file_exists' => file_exists(public_path($photoPath)),
             ]);
 
             return response()->json([
@@ -276,9 +272,10 @@ class AttendanceController extends Controller
             if ($photo instanceof \Illuminate\Http\UploadedFile) {
                 $extension = $photo->getClientOriginalExtension();
                 $fileName = $photoName . '.' . $extension;
-                $path = $photo->storeAs('public/attendance_photos', $fileName);
-                Log::info('Upload file via UploadedFile', ['path' => $path]);
-                return $path ? str_replace('public/', '', $path) : null;
+                $storagePath = 'attendance_photos/' . $fileName;
+                $photo->move(public_path('attendance_photos'), $fileName);
+                Log::info('Upload file via UploadedFile', ['path' => $storagePath]);
+                return $storagePath;
             }
 
             // Jika foto dikirim sebagai string base64
@@ -304,27 +301,28 @@ class AttendanceController extends Controller
                 }
 
                 $fileName = $photoName . '.' . $extension;
+                $storagePath = 'attendance_photos/' . $fileName;
+                
+                // Pastikan direktori ada
                 $dirPath = public_path('attendance_photos');
                 if (!file_exists($dirPath)) {
                     mkdir($dirPath, 0755, true);
                 }
+                
+                // Simpan file
                 $fullPath = $dirPath . '/' . $fileName;
                 $result = file_put_contents($fullPath, $photoData);
-                $photoPath = 'attendance_photos/' . $fileName;
-                
-                // Simpan file ke storage
-                $result = Storage::put($fullPath, $photoData);
                 
                 // Log hasil penyimpanan
                 Log::info('Hasil simpan file base64', [
                     'fileName' => $fileName,
                     'fullPath' => $fullPath,
                     'result' => $result,
-                    'exists' => Storage::exists($fullPath),
-                    'file_size' => $result ? Storage::size($fullPath) : 0
+                    'exists' => file_exists($fullPath),
+                    'file_size' => $result ? filesize($fullPath) : 0
                 ]);
 
-                return $result ? 'attendance_photos/' . $fileName : null;
+                return $result ? $storagePath : null;
             }
 
             Log::warning('Format foto tidak dikenali');
