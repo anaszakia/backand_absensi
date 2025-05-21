@@ -82,6 +82,16 @@ class AttendanceResource extends Resource
                     ->searchable(),
                 Tables\Columns\TextColumn::make('location_out')
                     ->searchable(),
+                Tables\Columns\ImageColumn::make('photo_in')
+                    ->label('Foto Check In')
+                    ->circular()
+                    ->height(60)
+                    ->visibility('public'),  
+                Tables\Columns\ImageColumn::make('photo_out')
+                    ->label('Foto Check Out')
+                    ->circular()
+                    ->height(60)
+                    ->visibility('public'),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

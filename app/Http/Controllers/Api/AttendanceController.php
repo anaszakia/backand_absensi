@@ -8,6 +8,7 @@ use App\Models\Attendance;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\File;
 
 class AttendanceController extends Controller
 {
@@ -194,12 +195,27 @@ class AttendanceController extends Controller
     private function handlePhotoUpload($photo, $userId, $type = 'in')
     {
         try {
+            // Pastikan folder attendance_photos sudah ada
+            $directory = 'public/attendance_photos';
+            if (!Storage::exists($directory)) {
+                Storage::makeDirectory($directory);
+                Log::info('Created directory: ' . $directory);
+            }
+
             // Jika dikirim sebagai file (multipart/form-data)
             if ($photo instanceof \Illuminate\Http\UploadedFile) {
                 Log::info('Processing uploaded file');
                 $photoName = time() . '_' . $userId . '_' . $type . '.' . $photo->getClientOriginalExtension();
                 $photo->storeAs('public/attendance_photos', $photoName);
-                return 'attendance_photos/' . $photoName;
+                
+                // Periksa apakah file berhasil disimpan
+                if (Storage::exists('public/attendance_photos/' . $photoName)) {
+                    Log::info('Photo saved: ' . $photoName);
+                    return 'attendance_photos/' . $photoName;
+                } else {
+                    Log::error('Failed to save photo');
+                    return null;
+                }
             }
 
             // Jika dikirim sebagai base64
@@ -219,7 +235,15 @@ class AttendanceController extends Controller
 
                     $photoName = time() . '_' . $userId . '_' . $type . '.' . $extension;
                     Storage::put("public/attendance_photos/$photoName", $photoData);
-                    return 'attendance_photos/' . $photoName;
+                    
+                    // Periksa apakah file berhasil disimpan
+                    if (Storage::exists('public/attendance_photos/' . $photoName)) {
+                        Log::info('Photo saved: ' . $photoName);
+                        return 'attendance_photos/' . $photoName;
+                    } else {
+                        Log::error('Failed to save photo');
+                        return null;
+                    }
                 } else {
                     // Mungkin base64 tanpa header, coba decode langsung
                     Log::info('Trying to decode plain base64 string');
@@ -241,7 +265,15 @@ class AttendanceController extends Controller
                         
                         $photoName = time() . '_' . $userId . '_' . $type . '.' . $extension;
                         Storage::put("public/attendance_photos/$photoName", $photoData);
-                        return 'attendance_photos/' . $photoName;
+                        
+                        // Periksa apakah file berhasil disimpan
+                        if (Storage::exists('public/attendance_photos/' . $photoName)) {
+                            Log::info('Photo saved: ' . $photoName);
+                            return 'attendance_photos/' . $photoName;
+                        } else {
+                            Log::error('Failed to save photo');
+                            return null;
+                        }
                     } catch (\Exception $e) {
                         Log::error('Error decoding plain base64: ' . $e->getMessage());
                     }
