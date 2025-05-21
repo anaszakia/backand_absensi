@@ -79,7 +79,8 @@ class AttendanceController extends Controller
                 $fileName = time() . '_' . $request->user()->id . '_in.' . $extension;
                 
                 // Simpan file
-                $path = $file->storeAs('public/attendance_photos', $fileName);
+                $file->move(public_path('attendance_photos'), $fileName);
+                $photoPath = 'attendance_photos/' . $fileName;
                 
                 // Log detail file yang diupload
                 Log::info('File uploaded via multipart:', [
@@ -200,7 +201,8 @@ class AttendanceController extends Controller
                 $fileName = time() . '_' . $request->user()->id . '_out.' . $extension;
                 
                 // Simpan file
-                $path = $file->storeAs('public/attendance_photos', $fileName);
+                $file->move(public_path('attendance_photos'), $fileName);
+                $photoPath = 'attendance_photos/' . $fileName;
                 
                 // Log detail file yang diupload
                 Log::info('File uploaded via multipart:', [
@@ -302,7 +304,13 @@ class AttendanceController extends Controller
                 }
 
                 $fileName = $photoName . '.' . $extension;
-                $fullPath = "public/attendance_photos/{$fileName}";
+                $dirPath = public_path('attendance_photos');
+                if (!file_exists($dirPath)) {
+                    mkdir($dirPath, 0755, true);
+                }
+                $fullPath = $dirPath . '/' . $fileName;
+                $result = file_put_contents($fullPath, $photoData);
+                $photoPath = 'attendance_photos/' . $fileName;
                 
                 // Simpan file ke storage
                 $result = Storage::put($fullPath, $photoData);
