@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Log;
 
 class AttendanceController extends Controller
 {
+    // Definisi direktori untuk menyimpan foto absensi
+    private $photoDirectory = 'attendance_photos';
+    
     public function today(Request $request)
     {
         try {
@@ -35,6 +38,17 @@ class AttendanceController extends Controller
     public function checkIn(Request $request)
     {
         try {
+            // Log semua request data untuk debugging
+            Log::info('Check-in request data:', [
+                'all' => $request->all(),
+                'has_file' => $request->hasFile('photo'),
+                'content_type' => $request->header('Content-Type'),
+                'request_method' => $request->method(),
+                'request_format' => $request->format(),
+                'all_files' => count($request->allFiles()) > 0 ? 'Ada file' : 'Tidak ada file',
+            ]);
+            
+            // Validasi input
             $validator = Validator::make($request->all(), [
                 'location' => 'required|string|max:255',
                 'photo' => 'required',
@@ -48,15 +62,7 @@ class AttendanceController extends Controller
                 ], 422);
             }
 
-            // Log data request untuk debugging
-            Log::info('Check-in request data:', [
-                'has_file' => $request->hasFile('photo'),
-                'content_type' => $request->header('Content-Type'),
-                'request_method' => $request->method(),
-                'request_format' => $request->format(),
-                'all_files' => count($request->allFiles()) > 0 ? 'Ada file' : 'Tidak ada file',
-            ]);
-
+            // Cek apakah sudah absen masuk hari ini
             $existingAttendance = Attendance::where('user_id', $request->user()->id)
                 ->whereDate('date', now()->toDateString())
                 ->whereNotNull('check_in')
@@ -69,41 +75,20 @@ class AttendanceController extends Controller
                 ], 400);
             }
 
-            // Proses foto berdasarkan tipe request
-            $photoPath = null;
+            // Buat direktori jika belum ada
+            $this->createPhotoDirectoryIfNotExists();
             
-            if ($request->hasFile('photo')) {
-                // Jika dikirim sebagai file multipart
-                $file = $request->file('photo');
-                $extension = $file->getClientOriginalExtension();
-                $fileName = time() . '_' . $request->user()->id . '_in.' . $extension;
-                
-                // Simpan file di folder public
-                $storagePath = 'attendance_photos/' . $fileName;
-                $file->move(public_path('attendance_photos'), $fileName);
-                $photoPath = $storagePath;
-                
-                // Log detail file yang diupload
-                Log::info('File uploaded via multipart:', [
-                    'original_name' => $file->getClientOriginalName(),
-                    'stored_path' => $photoPath,
-                    'size' => $file->getSize(),
-                    'type' => $file->getMimeType(),
-                    'exists' => file_exists(public_path($photoPath))
-                ]);
-            } else {
-                // Jika dikirim sebagai string atau data lain
-                $photoData = $request->input('photo');
-                $photoPath = $this->handlePhotoUpload($photoData, $request->user()->id, 'in');
-            }
+            // Proses foto absensi
+            $photoPath = $this->processAttendancePhoto($request, $request->user()->id, 'in');
 
             if (!$photoPath) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Foto gagal disimpan',
+                    'message' => 'Foto gagal disimpan. Pastikan format foto valid.',
                 ], 500);
             }
 
+            // Simpan data absensi
             $attendance = Attendance::updateOrCreate(
                 [
                     'user_id' => $request->user()->id, 
@@ -120,7 +105,7 @@ class AttendanceController extends Controller
             );
 
             // Log hasil penyimpanan attendance
-            Log::info('Attendance saved', [
+            Log::info('Attendance check-in berhasil disimpan', [
                 'id' => $attendance->id,
                 'photo_path' => $photoPath,
                 'file_exists' => file_exists(public_path($photoPath)),
@@ -140,8 +125,7 @@ class AttendanceController extends Controller
             ]);
             return response()->json([
                 'status' => false,
-                'message' => 'Terjadi kesalahan saat absen masuk',
-                'error' => $e->getMessage()
+                'message' => 'Terjadi kesalahan saat absen masuk: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -149,6 +133,17 @@ class AttendanceController extends Controller
     public function checkOut(Request $request)
     {
         try {
+            // Log semua request data untuk debugging
+            Log::info('Check-out request data:', [
+                'all' => $request->all(),
+                'has_file' => $request->hasFile('photo'),
+                'content_type' => $request->header('Content-Type'),
+                'request_method' => $request->method(),
+                'request_format' => $request->format(),
+                'all_files' => count($request->allFiles()) > 0 ? 'Ada file' : 'Tidak ada file',
+            ]);
+            
+            // Validasi input
             $validator = Validator::make($request->all(), [
                 'location' => 'required|string|max:255',
                 'photo' => 'required',
@@ -162,15 +157,7 @@ class AttendanceController extends Controller
                 ], 422);
             }
 
-            // Log data request untuk debugging
-            Log::info('Check-out request data:', [
-                'has_file' => $request->hasFile('photo'),
-                'content_type' => $request->header('Content-Type'),
-                'request_method' => $request->method(),
-                'request_format' => $request->format(),
-                'all_files' => count($request->allFiles()) > 0 ? 'Ada file' : 'Tidak ada file',
-            ]);
-
+            // Cek apakah sudah absen masuk
             $attendance = Attendance::where('user_id', $request->user()->id)
                 ->whereDate('date', now()->toDateString())
                 ->first();
@@ -189,49 +176,28 @@ class AttendanceController extends Controller
                 ], 400);
             }
 
-            // Proses foto berdasarkan tipe request
-            $photoPath = null;
+            // Buat direktori jika belum ada
+            $this->createPhotoDirectoryIfNotExists();
             
-            if ($request->hasFile('photo')) {
-                // Jika dikirim sebagai file multipart
-                $file = $request->file('photo');
-                $extension = $file->getClientOriginalExtension();
-                $fileName = time() . '_' . $request->user()->id . '_out.' . $extension;
-                
-                // Simpan file di folder public
-                $storagePath = 'attendance_photos/' . $fileName;
-                $file->move(public_path('attendance_photos'), $fileName);
-                $photoPath = $storagePath;
-                
-                // Log detail file yang diupload
-                Log::info('File uploaded via multipart:', [
-                    'original_name' => $file->getClientOriginalName(),
-                    'stored_path' => $photoPath,
-                    'size' => $file->getSize(),
-                    'type' => $file->getMimeType(),
-                    'exists' => file_exists(public_path($photoPath))
-                ]);
-            } else {
-                // Jika dikirim sebagai string atau data lain
-                $photoData = $request->input('photo');
-                $photoPath = $this->handlePhotoUpload($photoData, $request->user()->id, 'out');
-            }
+            // Proses foto absensi
+            $photoPath = $this->processAttendancePhoto($request, $request->user()->id, 'out');
 
             if (!$photoPath) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Foto gagal disimpan',
+                    'message' => 'Foto gagal disimpan. Pastikan format foto valid.',
                 ], 500);
             }
 
+            // Update data absensi
             $attendance->update([
                 'check_out' => now(),
                 'location_out' => $request->location,
                 'photo_out' => $photoPath
             ]);
 
-            // Log hasil penyimpanan attendance
-            Log::info('Attendance updated', [
+            // Log hasil update attendance
+            Log::info('Attendance check-out berhasil diupdate', [
                 'id' => $attendance->id,
                 'photo_path' => $photoPath,
                 'file_exists' => file_exists(public_path($photoPath)),
@@ -251,88 +217,136 @@ class AttendanceController extends Controller
             ]);
             return response()->json([
                 'status' => false,
-                'message' => 'Terjadi kesalahan saat absen pulang',
-                'error' => $e->getMessage()
+                'message' => 'Terjadi kesalahan saat absen pulang: ' . $e->getMessage(),
             ], 500);
         }
     }
-
-    private function handlePhotoUpload($photo, $userId, $type = 'in')
+    
+    /**
+     * Membuat direktori penyimpanan foto jika belum ada
+     */
+    private function createPhotoDirectoryIfNotExists()
+    {
+        $dirPath = public_path($this->photoDirectory);
+        if (!file_exists($dirPath)) {
+            mkdir($dirPath, 0755, true);
+            Log::info('Direktori foto absensi dibuat: ' . $dirPath);
+        }
+    }
+    
+    /**
+     * Memproses foto absensi dari berbagai sumber (file atau base64)
+     */
+    private function processAttendancePhoto(Request $request, $userId, $type = 'in')
     {
         try {
-            // Log tipe data foto yang diterima
-            Log::info('Memproses upload foto', [
-                'type' => gettype($photo), 
-                'length' => is_string($photo) ? strlen($photo) : 'bukan string'
-            ]);
+            // Jika photo adalah file upload
+            if ($request->hasFile('photo')) {
+                return $this->handleFileUpload($request->file('photo'), $userId, $type);
+            }
             
-            $photoName = time() . '_' . $userId . '_' . $type;
-
-            // Jika foto dikirim sebagai file
-            if ($photo instanceof \Illuminate\Http\UploadedFile) {
-                $extension = $photo->getClientOriginalExtension();
-                $fileName = $photoName . '.' . $extension;
-                $storagePath = 'attendance_photos/' . $fileName;
-                $photo->move(public_path('attendance_photos'), $fileName);
-                Log::info('Upload file via UploadedFile', ['path' => $storagePath]);
-                return $storagePath;
+            // Jika photo adalah base64 string atau data lain
+            $photoData = $request->input('photo');
+            if (!empty($photoData) && is_string($photoData)) {
+                return $this->handleBase64Upload($photoData, $userId, $type);
             }
-
-            // Jika foto dikirim sebagai string base64
-            if (is_string($photo)) {
-                // Log panjang string untuk debugging
-                Log::info('Proses foto string', ['length' => strlen($photo)]);
-                
-                $extension = 'jpg';
-                $base64Data = $photo;
-
-                // Periksa apakah format data:image/xxx;base64,
-                if (preg_match('/^data:image\/(\w+);base64,/', $photo, $matches)) {
-                    $extension = $matches[1];
-                    $base64Data = substr($photo, strpos($photo, ',') + 1);
-                    Log::info('Format base64 terdeteksi', ['extension' => $extension]);
-                }
-
-                // Decode base64
-                $photoData = base64_decode($base64Data);
-                if ($photoData === false) {
-                    Log::error('Gagal decode base64');
-                    return null;
-                }
-
-                $fileName = $photoName . '.' . $extension;
-                $storagePath = 'attendance_photos/' . $fileName;
-                
-                // Pastikan direktori ada
-                $dirPath = public_path('attendance_photos');
-                if (!file_exists($dirPath)) {
-                    mkdir($dirPath, 0755, true);
-                }
-                
-                // Simpan file
-                $fullPath = $dirPath . '/' . $fileName;
-                $result = file_put_contents($fullPath, $photoData);
-                
-                // Log hasil penyimpanan
-                Log::info('Hasil simpan file base64', [
-                    'fileName' => $fileName,
-                    'fullPath' => $fullPath,
-                    'result' => $result,
-                    'exists' => file_exists($fullPath),
-                    'file_size' => $result ? filesize($fullPath) : 0
-                ]);
-
-                return $result ? $storagePath : null;
-            }
-
-            Log::warning('Format foto tidak dikenali');
+            
+            Log::warning('Format foto tidak valid atau kosong');
             return null;
         } catch (\Exception $e) {
-            Log::error('Photo upload error: ' . $e->getMessage(), [
+            Log::error('Proses foto error: ' . $e->getMessage(), [
                 'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
+                'line' => $e->getLine()
             ]);
+            return null;
+        }
+    }
+    
+    /**
+     * Menangani upload file
+     */
+    private function handleFileUpload($file, $userId, $type)
+    {
+        try {
+            if (!$file->isValid()) {
+                Log::error('File tidak valid');
+                return null;
+            }
+            
+            $extension = $file->getClientOriginalExtension() ?: 'jpg';
+            $fileName = time() . '_' . $userId . '_' . $type . '.' . $extension;
+            $relativePath = $this->photoDirectory . '/' . $fileName;
+            
+            Log::info('Upload file multipart', [
+                'original_name' => $file->getClientOriginalName(),
+                'mime_type' => $file->getMimeType(),
+                'size' => $file->getSize(),
+                'is_valid' => $file->isValid(),
+                'save_path' => public_path($relativePath)
+            ]);
+            
+            // Simpan file ke direktori publik
+            $file->move(public_path($this->photoDirectory), $fileName);
+            
+            // Verifikasi file berhasil disimpan
+            if (file_exists(public_path($relativePath))) {
+                Log::info('File berhasil disimpan', ['path' => $relativePath]);
+                return $relativePath;
+            }
+            
+            Log::error('File gagal disimpan');
+            return null;
+        } catch (\Exception $e) {
+            Log::error('Error handling file upload: ' . $e->getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Menangani upload base64
+     */
+    private function handleBase64Upload($base64Data, $userId, $type)
+    {
+        try {
+            $imageData = $base64Data;
+            $extension = 'jpg';
+            
+            // Deteksi dan proses format data:image
+            if (preg_match('/^data:image\/(\w+);base64,/', $base64Data, $matches)) {
+                $extension = strtolower($matches[1]);
+                $imageData = substr($base64Data, strpos($base64Data, ',') + 1);
+                Log::info('Format base64 terdeteksi', ['extension' => $extension]);
+            }
+            
+            // Decode base64
+            $decodedImage = base64_decode($imageData, true);
+            if ($decodedImage === false) {
+                Log::error('Gagal decode base64: data tidak valid');
+                return null;
+            }
+            
+            // Generate filename dan path
+            $fileName = time() . '_' . $userId . '_' . $type . '.' . $extension;
+            $relativePath = $this->photoDirectory . '/' . $fileName;
+            $fullPath = public_path($relativePath);
+            
+            // Simpan file
+            $result = file_put_contents($fullPath, $decodedImage);
+            
+            if ($result === false) {
+                Log::error('Gagal menyimpan file', ['path' => $fullPath]);
+                return null;
+            }
+            
+            Log::info('Base64 berhasil disimpan', [
+                'path' => $relativePath,
+                'size' => filesize($fullPath),
+                'exists' => file_exists($fullPath)
+            ]);
+            
+            return $relativePath;
+        } catch (\Exception $e) {
+            Log::error('Error handling base64 upload: ' . $e->getMessage());
             return null;
         }
     }
